@@ -1,0 +1,41 @@
+{
+  "name": "shortsmaker",
+  "version": "1.0.0",
+  "description": "Next-Gen AI Long-Video-to-Shorts MCP Server powered by Replicate & FFmpeg",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "shortsmaker-mcp": "./src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node tests/test_mcp.js"
+  },
+  "keywords": [
+    "mcp",
+    "opus-clip",
+    "replicate",
+    "shorts",
+    "video-editing",
+    "tiktok",
+    "reels",
+    "subtitles"
+  ],
+  "author": "MahmudulRubel <mahomudulhasan7@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MahmudulRubel/shortsmaker-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MahmudulRubel/shortsmaker-mcp/issues"
+  },
+  "homepage": "https://github.com/MahmudulRubel/shortsmaker-mcp#readme",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "dotenv": "^18.0.9",
+    "fluent-ffmpeg": "^2.1.3",
+    "replicate": "^1.4.0",
+    "zod": "^4.6.7"
+  }
+}
