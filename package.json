@@ -1,7 +1,7 @@
 {
   "name": "shortsmaker",
-  "version": "1.0.0",
-  "description": "Next-Gen AI Long-Video-to-Shorts MCP Server powered by Replicate & FFmpeg",
+  "version": "2.0.0",
+  "description": "10X Next-Gen AI Long-Video-to-Shorts MCP Server (Zero-API Local Mode + Cloud AI)",
   "type": "module",
   "main": "src/index.js",
   "bin": {

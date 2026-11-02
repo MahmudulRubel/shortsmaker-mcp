@@ -13,13 +13,14 @@ import { AIProviderService } from './aiProviderService.js';
 import { VideoProcessor } from './videoProcessor.js';
 import { SubtitleGenerator } from './subtitleGenerator.js';
 import { VideoDownloader } from './downloader.js';
+import { SmartPacing } from './smartPacing.js';
 
 dotenv.config();
 
 const server = new Server(
   {
     name: 'shortsmaker-mcp',
-    version: '1.1.0',
+    version: '2.0.0',
   },
   {
     capabilities: {
@@ -82,7 +83,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: 'create_short_clip',
         description:
-          'Cuts a video segment, reframes to 9:16 vertical (viral fullscreen punch, blurred background, or smart crop), generates word-by-word animated karaoke subtitles (Hormozi / MrBeast style with emojis), and renders a polished viral short.',
+          'Cuts a video segment, reframes to 9:16 vertical (viral fullscreen punch, blurred background, or smart crop), generates kinetic animated karaoke subtitles with hook banner, places beat-synced SFX (whooshes, pops, bass impacts), and renders a polished viral short.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -99,6 +100,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               description: 'Duration in seconds (e.g. 30)',
               default: 30,
             },
+            hook_title: {
+              type: 'string',
+              description: 'Optional bold hook title banner displayed during first 2.5s (e.g., "ONE-HANDED SIX!")',
+            },
             layout: {
               type: 'string',
               enum: ['viral_fullscreen_punch', 'blurred_background', 'smart_crop', 'split_screen'],
@@ -108,13 +113,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             caption_style: {
               type: 'string',
-              enum: ['hormozi', 'mrbeast', 'neon', 'minimal'],
-              description: 'Animated subtitle style',
+              enum: ['hormozi', 'hormozi_badge', 'mrbeast', 'neon', 'minimal'],
+              description: 'Animated subtitle style (including pill badge & neon glow)',
               default: 'hormozi',
             },
             enable_captions: {
               type: 'boolean',
               description: 'Whether to burn animated word-by-word subtitles',
+              default: true,
+            },
+            enable_sfx: {
+              type: 'boolean',
+              description: 'Whether to inject beat-synced SFX (whooshes on zooms, pops on subtitle beats, bass drops on hook)',
               default: true,
             },
             broll_image_path: {
@@ -189,7 +199,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: 'full_pipeline',
         description:
-          'One-click automated workflow: ingests long video, analyzes the single highest-scoring viral highlight, cuts, reframes to 9:16, burns animated karaoke captions, and renders a ready-to-post short video.',
+          'One-click automated workflow: ingests long video, analyzes the single highest-scoring viral highlight, cuts, reframes to 9:16, burns animated karaoke captions, places SFX, and renders a ready-to-post short video.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -199,7 +209,38 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             caption_style: {
               type: 'string',
-              enum: ['hormozi', 'mrbeast', 'neon', 'minimal'],
+              enum: ['hormozi', 'hormozi_badge', 'mrbeast', 'neon', 'minimal'],
+              default: 'hormozi',
+            },
+            layout: {
+              type: 'string',
+              enum: ['viral_fullscreen_punch', 'blurred_background', 'smart_crop', 'split_screen'],
+              default: 'viral_fullscreen_punch',
+            },
+            ai_provider: AI_PROVIDER_PROPERTY,
+          },
+          required: ['video_path_or_url'],
+        },
+      },
+      {
+        name: 'batch_generate_shorts',
+        description:
+          '10X Master Batch Engine: Ingests a long video, automatically identifies the top 3-5 viral moments, reframes to 9:16 vertical, applies dynamic punch-in zooms, generates animated kinetic subtitles with hook banners, mixes beat-synced SFX (whooshes, pops, bass impacts), and exports all ready-to-post viral shorts with titles, captions, and hashtags in a single call.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            video_path_or_url: {
+              type: 'string',
+              description: 'Path or URL of the long video',
+            },
+            count: {
+              type: 'number',
+              description: 'Number of viral shorts to produce (default: 3, max: 5)',
+              default: 3,
+            },
+            caption_style: {
+              type: 'string',
+              enum: ['hormozi', 'hormozi_badge', 'mrbeast', 'neon', 'minimal'],
               default: 'hormozi',
             },
             layout: {
@@ -321,8 +362,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const layout = args.layout || 'viral_fullscreen_punch';
         const captionStyle = args.caption_style || 'hormozi';
         const enableCaptions = args.enable_captions !== false;
+        const enableSFX = args.enable_sfx !== false;
 
         let subtitlesPath = null;
+        let subtitleBeats = [];
 
         if (enableCaptions) {
           const audioPath = path.join(storageDir, 'audio', `clip_${runId}.mp3`);
@@ -332,14 +375,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           });
 
           subtitlesPath = path.join(storageDir, 'subtitles', `sub_${runId}.ass`);
-          SubtitleGenerator.generateASS({
+          const subResult = SubtitleGenerator.generateASS({
             words: transcription.words || [],
             chunks: transcription.chunks || [],
             styleName: captionStyle,
             outputPath: subtitlesPath,
             clipStartTime: startTime,
             clipEndTime: startTime + duration,
+            hookBannerText: args.hook_title || null,
           });
+          subtitleBeats = subResult.beatTimestamps || [];
         }
 
         const outName = args.output_filename || `short_${runId}.mp4`;
@@ -352,9 +397,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           duration,
           layout,
           subtitlesAssPath: subtitlesPath,
+          subtitleBeatTimestamps: subtitleBeats,
           brollPath: args.broll_image_path,
           brollStartTime: Number(args.broll_start_time) || 3,
           brollDuration: Number(args.broll_duration) || 4,
+          enableSFX,
         });
 
         return {
@@ -364,13 +411,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               text: JSON.stringify(
                 {
                   status: 'success',
-                  message: 'Short video rendered successfully!',
+                  message: 'Short video rendered successfully with 10X features!',
                   short_video_path: path.resolve(outputPath),
                   layout,
                   caption_style: captionStyle,
                   duration,
                   aspect_ratio: '9:16 (1080x1920)',
                   subtitles_burned: enableCaptions,
+                  sfx_injected: enableSFX,
                   provider_used: aiProvider.getActiveProvider(args.ai_provider),
                 },
                 null,
@@ -464,13 +512,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const layout = args.layout || 'viral_fullscreen_punch';
 
         const subtitlesPath = path.join(storageDir, 'subtitles', `sub_full_${runId}.ass`);
-        SubtitleGenerator.generateASS({
+        const subResult = SubtitleGenerator.generateASS({
           words: transcription.words || [],
           chunks: transcription.chunks || [],
           styleName: captionStyle,
           outputPath: subtitlesPath,
           clipStartTime: startTime,
           clipEndTime: startTime + duration,
+          hookBannerText: bestClip.headline || 'VIRAL MOMENT',
         });
 
         const outputPath = path.join(storageDir, 'outputs', `viral_short_${runId}.mp4`);
@@ -481,6 +530,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           duration,
           layout,
           subtitlesAssPath: subtitlesPath,
+          subtitleBeatTimestamps: subResult.beatTimestamps,
         });
 
         return {
@@ -499,6 +549,101 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   layout,
                   suggested_title: `${bestClip.headline} 🔥 #shorts`,
                   provider_used: aiProvider.getActiveProvider(args.ai_provider),
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
+      case 'batch_generate_shorts': {
+        const localVideo = await VideoDownloader.resolveSource(args.video_path_or_url);
+        const count = Math.min(Math.max(Number(args.count) || 3, 1), 5);
+        const captionStyle = args.caption_style || 'hormozi';
+        const layout = args.layout || 'viral_fullscreen_punch';
+
+        const metadata = await videoProcessor.getVideoMetadata(localVideo);
+        const audioPath = path.join(storageDir, 'audio', `batch_${runId}.mp3`);
+        await videoProcessor.extractAudio(localVideo, audioPath);
+
+        const transcription = await aiProvider.transcribeAudio(audioPath, {
+          provider: args.ai_provider,
+        });
+        const analysis = await aiProvider.analyzeVirality(transcription, metadata.duration, {
+          provider: args.ai_provider,
+        });
+
+        const selectedClips = (analysis.clips || []).slice(0, count);
+        if (selectedClips.length === 0) {
+          selectedClips.push({
+            start_time: 0,
+            duration: 30,
+            headline: 'Viral Moment',
+            virality_score: 95,
+            hook_line: 'Watch this incredible moment unfold!',
+          });
+        }
+
+        const generatedShorts = [];
+
+        for (let i = 0; i < selectedClips.length; i++) {
+          const clip = selectedClips[i];
+          const startTime = clip.start_time;
+          const duration = clip.duration || 30;
+          const clipIndex = i + 1;
+
+          const subPath = path.join(storageDir, 'subtitles', `batch_${runId}_clip_${clipIndex}.ass`);
+          const subResult = SubtitleGenerator.generateASS({
+            words: transcription.words || [],
+            chunks: transcription.chunks || [],
+            styleName: captionStyle,
+            outputPath: subPath,
+            clipStartTime: startTime,
+            clipEndTime: startTime + duration,
+            hookBannerText: clip.headline,
+          });
+
+          const outPath = path.join(storageDir, 'outputs', `Batch_Short_${clipIndex}_${runId}.mp4`);
+          await videoProcessor.cutAndReframe({
+            inputPath: localVideo,
+            outputPath: outPath,
+            startTime,
+            duration,
+            layout,
+            subtitlesAssPath: subPath,
+            subtitleBeatTimestamps: subResult.beatTimestamps,
+            enableSFX: true,
+          });
+
+          generatedShorts.push({
+            clip_number: clipIndex,
+            headline: clip.headline,
+            virality_score: clip.virality_score || 95,
+            hook_line: clip.hook_line,
+            duration: duration,
+            short_video_path: path.resolve(outPath),
+            post_captions: [
+              `🔥 ${clip.headline} - Watch what happens! #viral`,
+              `Wait for the end... This completely changed my perspective! 🤯`,
+              `The biggest takeaway: ${clip.hook_line || clip.headline} #shorts`,
+            ],
+            hashtags: ['#Shorts', '#ViralShorts', '#Reels', '#Trending', '#ContentCreator'],
+          });
+        }
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  status: 'success',
+                  message: `Successfully generated ${generatedShorts.length} master viral shorts in 1 batch!`,
+                  provider_used: aiProvider.getActiveProvider(args.ai_provider),
+                  total_shorts: generatedShorts.length,
+                  shorts: generatedShorts,
                 },
                 null,
                 2
