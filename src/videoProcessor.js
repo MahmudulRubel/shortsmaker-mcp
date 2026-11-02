@@ -3,12 +3,14 @@ import path from 'path';
 import fs from 'fs';
 import { SFXEngine } from './sfxEngine.js';
 import { SmartPacing } from './smartPacing.js';
+import { FaceTracker } from './faceTracker.js';
 
 export class VideoProcessor {
   constructor(ffmpegPath = 'ffmpeg') {
     this.ffmpegPath = ffmpegPath;
     this.sfxDir = path.resolve('./storage/sfx');
     this.sfxEngine = new SFXEngine(this.sfxDir);
+    this.faceTracker = new FaceTracker();
   }
 
   /**
@@ -88,6 +90,7 @@ export class VideoProcessor {
     enableColorPop = true,
     enableZoomPunches = true,
     enableSFX = true,
+    faceTracking = true,
     musicPath = null,
     speedPreset = 'ultrafast' // 'ultrafast' (default 6X faster) | 'veryfast' | 'fast'
   }) {
@@ -102,16 +105,33 @@ export class VideoProcessor {
       musicInputIndex = 1;
     }
 
-    // 2. Build Video Filtergraph
+    // Dynamic zoom points based on clip duration (every 3.2s)
+    const zoomPoints = [];
+    for (let zp = 3.2; zp < duration; zp += 3.2) {
+      zoomPoints.push(parseFloat(zp.toFixed(1)));
+    }
+
+    // 2. Build Video Filtergraph with Face Tracking
     let videoFilter = '';
-    const zoomPoints = [3.2, 6.4, 9.6, 12.8, 16.0, 19.2, 22.4, 25.6];
+
+    let cropXExpr = '(in_w-out_w)/2';
+    if (faceTracking && layout === 'viral_fullscreen_punch') {
+      try {
+        const ftRes = await this.faceTracker.getTrackingCropFilter(inputPath, startTime, duration);
+        if (ftRes && ftRes.cropXExpr) {
+          cropXExpr = ftRes.cropXExpr;
+        }
+      } catch (err) {
+        console.warn(`[VideoProcessor] Face tracking fallback: ${err.message}`);
+      }
+    }
 
     if (layout === 'viral_fullscreen_punch' || layout === 'smart_crop') {
       if (enableZoomPunches) {
-        // Alternating 1.0x and 1.25x punch-in zoom every 3.2s
-        videoFilter = `[0:v]crop=w='if(mod(floor(t/3.2),2), 324*ih/720, 405*ih/720)':h='if(mod(floor(t/3.2),2), 576*ih/720, ih)':x='(in_w-out_w)/2':y='(in_h-out_h)/2',scale=1080:1920`;
+        // Alternating 1.0x and 1.25x punch-in zoom every 3.2s with tracked face center
+        videoFilter = `[0:v]crop=w='if(mod(floor(t/3.2),2), 324*ih/720, 405*ih/720)':h='if(mod(floor(t/3.2),2), 576*ih/720, ih)':x='if(mod(floor(t/3.2),2), (${cropXExpr})+40*ih/720, ${cropXExpr})':y='if(mod(floor(t/3.2),2), 72*ih/720, (in_h-out_h)/2)',scale=1080:1920`;
       } else {
-        videoFilter = `[0:v]crop=ih*9/16:ih:(iw-ow)/2:0,scale=1080:1920`;
+        videoFilter = `[0:v]crop=w=ih*9/16:h=ih:x='${cropXExpr}':y=0,scale=1080:1920`;
       }
 
       if (enableColorPop) {

@@ -232,9 +232,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   static _synthesizeWordsFromChunks(chunks, clipStartTime, clipEndTime, uppercase = true) {
     const words = [];
     for (const chunk of chunks) {
-      const cStart = Math.max(0, chunk.timestamp[0] - clipStartTime);
-      const cEnd = Math.max(0, chunk.timestamp[1] - clipStartTime);
-      if (chunk.timestamp[0] >= clipEndTime || chunk.timestamp[1] <= clipStartTime) continue;
+      const rawStart = chunk.timestamp ? chunk.timestamp[0] : (chunk.start !== undefined ? chunk.start : 0);
+      const rawEnd = chunk.timestamp ? chunk.timestamp[1] : (chunk.end !== undefined ? chunk.end : rawStart + 2);
+      if (rawStart >= clipEndTime || rawEnd <= clipStartTime) continue;
+
+      const cStart = Math.max(0, rawStart - clipStartTime);
+      const cEnd = Math.max(0, rawEnd - clipStartTime);
 
       const rawWords = (chunk.text || '').trim().split(/\s+/).filter(Boolean);
       if (rawWords.length === 0) continue;
