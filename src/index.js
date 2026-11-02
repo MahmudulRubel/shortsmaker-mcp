@@ -20,7 +20,7 @@ dotenv.config();
 const server = new Server(
   {
     name: 'shortsmaker-mcp',
-    version: '2.0.0',
+    version: '2.1.0',
   },
   {
     capabilities: {
@@ -72,8 +72,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             target_clip_length: {
               type: 'number',
-              description: 'Target duration in seconds for each short (default: 20s for ultra-fast, snappy viral retention)',
-              default: 20,
+              description: 'Target duration in seconds for each short (sweet spot: 40-60s, default: 45)',
+              default: 45,
             },
             ai_provider: AI_PROVIDER_PROPERTY,
           },
@@ -83,7 +83,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: 'create_short_clip',
         description:
-          'Cuts a video segment, reframes to 9:16 vertical (viral fullscreen punch, blurred background, or smart crop), generates kinetic animated karaoke subtitles with hook banner, places beat-synced SFX (whooshes, pops, bass impacts), and renders a polished viral short in seconds.',
+          'Cuts a video segment, reframes to 9:16 vertical (viral fullscreen punch, blurred background, or smart crop) with AI face tracking, generates kinetic animated karaoke subtitles with hook banner, places beat-synced SFX (whooshes, pops, bass impacts), and renders a polished viral short in seconds.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -97,8 +97,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             duration: {
               type: 'number',
-              description: 'Duration in seconds (default: 20s)',
-              default: 20,
+              description: 'Duration in seconds (sweet spot: 40-60s, default: 45)',
+              default: 45,
+            },
+            face_tracking: {
+              type: 'boolean',
+              description: 'Enable MediaPipe AI continuous face tracking to smoothly center the speaker in 9:16 vertical',
+              default: true,
             },
             speed_preset: {
               type: 'string',
@@ -213,6 +218,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: 'string',
               description: 'Path or URL of the long video',
             },
+            target_clip_length: {
+              type: 'number',
+              description: 'Target duration in seconds (sweet spot: 40-60s, default: 45)',
+              default: 45,
+            },
+            face_tracking: {
+              type: 'boolean',
+              description: 'Enable MediaPipe AI continuous face tracking to smoothly center speaker in 9:16 vertical',
+              default: true,
+            },
             caption_style: {
               type: 'string',
               enum: ['hormozi', 'hormozi_badge', 'mrbeast', 'neon', 'minimal'],
@@ -231,7 +246,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: 'batch_generate_shorts',
         description:
-          '10X Master Batch Engine: Ingests a long video, automatically identifies the top 3-5 viral moments, reframes to 9:16 vertical, applies dynamic punch-in zooms, generates animated kinetic subtitles with hook banners, mixes beat-synced SFX (whooshes, pops, bass impacts), and exports all ready-to-post viral shorts with titles, captions, and hashtags in a single call.',
+          '10X Master Batch Engine: Ingests a long video, automatically identifies top viral moments (sweet spot 40-60s), auto-reframes to 9:16 with AI face tracking, applies punch-in zooms, generates kinetic subtitles with hook banners, mixes beat-synced SFX, and exports all ready-to-post viral shorts.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -241,8 +256,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             count: {
               type: 'number',
-              description: 'Number of viral shorts to produce (default: 3, max: 5)',
+              description: 'Number of viral shorts to produce (default: 3, max: 10)',
               default: 3,
+            },
+            target_clip_length: {
+              type: 'number',
+              description: 'Target duration in seconds for each short (sweet spot: 40-60s, default: 45)',
+              default: 45,
+            },
+            face_tracking: {
+              type: 'boolean',
+              description: 'Enable MediaPipe AI continuous face tracking to smoothly auto-reframe and center speaker in 9:16 vertical',
+              default: true,
             },
             caption_style: {
               type: 'string',
@@ -364,11 +389,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'create_short_clip': {
         const localVideo = await VideoDownloader.resolveSource(args.video_path_or_url);
         const startTime = Number(args.start_time) || 0;
-        const duration = Number(args.duration) || 20;
+        const duration = Number(args.duration) || 45;
         const layout = args.layout || 'viral_fullscreen_punch';
         const captionStyle = args.caption_style || 'hormozi';
         const enableCaptions = args.enable_captions !== false;
         const enableSFX = args.enable_sfx !== false;
+        const faceTracking = args.face_tracking !== false;
         const speedPreset = args.speed_preset || 'ultrafast';
 
         let subtitlesPath = null;
@@ -409,6 +435,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           brollStartTime: Number(args.broll_start_time) || 3,
           brollDuration: Number(args.broll_duration) || 4,
           enableSFX,
+          faceTracking,
           speedPreset,
         });
 
@@ -515,9 +542,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
 
         const startTime = bestClip.start_time;
-        const duration = Math.min(Number(args.target_clip_length) || bestClip.duration || 20, 25);
+        const duration = Math.min(Number(args.target_clip_length) || bestClip.duration || 45, 59);
         const captionStyle = args.caption_style || 'hormozi';
         const layout = args.layout || 'viral_fullscreen_punch';
+        const faceTracking = args.face_tracking !== false;
         const speedPreset = args.speed_preset || 'ultrafast';
 
         const subtitlesPath = path.join(storageDir, 'subtitles', `sub_full_${runId}.ass`);
@@ -540,6 +568,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           layout,
           subtitlesAssPath: subtitlesPath,
           subtitleBeatTimestamps: subResult.beatTimestamps,
+          faceTracking,
           speedPreset,
         });
 
@@ -570,9 +599,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case 'batch_generate_shorts': {
         const localVideo = await VideoDownloader.resolveSource(args.video_path_or_url);
-        const count = Math.min(Math.max(Number(args.count) || 3, 1), 5);
+        const count = Math.min(Math.max(Number(args.count) || 3, 1), 10);
         const captionStyle = args.caption_style || 'hormozi';
         const layout = args.layout || 'viral_fullscreen_punch';
+        const faceTracking = args.face_tracking !== false;
 
         const metadata = await videoProcessor.getVideoMetadata(localVideo);
         const audioPath = path.join(storageDir, 'audio', `batch_${runId}.mp3`);
@@ -589,7 +619,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (selectedClips.length === 0) {
           selectedClips.push({
             start_time: 0,
-            duration: 30,
+            duration: 45,
             headline: 'Viral Moment',
             virality_score: 95,
             hook_line: 'Watch this incredible moment unfold!',
@@ -601,7 +631,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         for (let i = 0; i < selectedClips.length; i++) {
           const clip = selectedClips[i];
           const startTime = clip.start_time;
-          const duration = Math.min(clip.duration || 20, 22);
+          const duration = Math.min(Number(args.target_clip_length) || clip.duration || 45, 59);
           const clipIndex = i + 1;
           const speedPreset = args.speed_preset || 'ultrafast';
 
@@ -626,6 +656,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             subtitlesAssPath: subPath,
             subtitleBeatTimestamps: subResult.beatTimestamps,
             enableSFX: true,
+            faceTracking,
             speedPreset,
           });
 
