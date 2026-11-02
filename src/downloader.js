@@ -116,13 +116,23 @@ export class VideoDownloader {
 
       proc.on('close', code => {
         if (code === 0) {
-          // Find downloaded file matching pattern
+          // Find downloaded file matching pattern - MUST match video extension, NOT subtitle (.vtt)
           const dir = path.dirname(outputTemplate);
           const basePrefix = path.basename(outputTemplate).split('.')[0];
           const files = fs.readdirSync(dir);
-          const match = files.find(f => f.startsWith(basePrefix));
-          if (match) {
-            return resolve(path.join(dir, match));
+          const videoMatch = files.find(f => f.startsWith(basePrefix) && /\.(mp4|mkv|webm|mov|avi)$/i.test(f));
+          const subMatch = files.find(f => f.startsWith(basePrefix) && /\.(vtt|srt|ass)$/i.test(f));
+
+          if (subMatch) {
+            // Also copy to storage/subtitles directory so transcription engine finds it immediately
+            const destSub = path.resolve(dir, '..', 'subtitles', `${basePrefix}.vtt`);
+            try {
+              fs.copyFileSync(path.join(dir, subMatch), destSub);
+            } catch {}
+          }
+
+          if (videoMatch) {
+            return resolve(path.join(dir, videoMatch));
           }
           resolve(outputTemplate.replace('%(ext)s', 'mp4'));
         } else {

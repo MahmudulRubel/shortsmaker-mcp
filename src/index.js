@@ -16,15 +16,17 @@ import { SubtitleGenerator } from './subtitleGenerator.js';
 import { VideoDownloader } from './downloader.js';
 import { SmartPacing } from './smartPacing.js';
 
-dotenv.config();
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Load .env from ShortsMaker directory AND current working directory
+dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
+dotenv.config();
 
 const server = new Server(
   {
     name: 'shortsmaker-mcp',
-    version: '2.1.0',
+    version: '2.2.0',
   },
   {
     capabilities: {
@@ -363,6 +365,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         const transcription = await aiProvider.transcribeAudio(audioPath, {
           provider: args.ai_provider,
+          videoPath: localVideo,
+          storageDir,
         });
         const analysis = await aiProvider.analyzeVirality(transcription, metadata.duration, {
           provider: args.ai_provider,
@@ -409,6 +413,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           await videoProcessor.extractAudio(localVideo, audioPath);
           const transcription = await aiProvider.transcribeAudio(audioPath, {
             provider: args.ai_provider,
+            videoPath: localVideo,
+            storageDir,
           });
 
           subtitlesPath = path.join(storageDir, 'subtitles', `sub_${runId}.ass`);
@@ -533,6 +539,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         const transcription = await aiProvider.transcribeAudio(audioPath, {
           provider: args.ai_provider,
+          videoPath: localVideo,
+          storageDir,
         });
         const analysis = await aiProvider.analyzeVirality(transcription, metadata.duration, {
           provider: args.ai_provider,
@@ -614,6 +622,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         const transcription = await aiProvider.transcribeAudio(audioPath, {
           provider: args.ai_provider,
+          videoPath: localVideo,
+          storageDir,
         });
         const analysis = await aiProvider.analyzeVirality(transcription, metadata.duration, {
           provider: args.ai_provider,

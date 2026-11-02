@@ -133,11 +133,12 @@ export class VideoProcessor {
     }
 
     if (isFullscreenVertical) {
+      const escapedCropX = cropXExpr.replace(/,/g, '\\,');
       if (enableZoomPunches) {
         // Alternating 1.0x and 1.25x punch-in zoom every 3.2s with continuous tracked face center
-        videoFilter = `[0:v]crop=w='if(mod(floor(t/3.2),2), 324*ih/720, 405*ih/720)':h='if(mod(floor(t/3.2),2), 576*ih/720, ih)':x='if(mod(floor(t/3.2),2), (${cropXExpr})+40*ih/720, ${cropXExpr})':y='if(mod(floor(t/3.2),2), 72*ih/720, (in_h-out_h)/2)',scale=1080:1920`;
+        videoFilter = `[0:v]crop=w='if(mod(floor(t/3.2),2), 324*ih/720, 405*ih/720)':h='if(mod(floor(t/3.2),2), 576*ih/720, ih)':x='if(mod(floor(t/3.2),2), (${escapedCropX})+40*ih/720, ${escapedCropX})':y='if(mod(floor(t/3.2),2), 72*ih/720, (in_h-out_h)/2)',scale=1080:1920`;
       } else {
-        videoFilter = `[0:v]crop=w=ih*9/16:h=ih:x='${cropXExpr}':y=0,scale=1080:1920`;
+        videoFilter = `[0:v]crop=w=ih*9/16:h=ih:x='${escapedCropX}':y=0,scale=1080:1920`;
       }
 
       if (enableColorPop) {
@@ -158,7 +159,7 @@ export class VideoProcessor {
     // Subtitle burning with ASS styling
     if (subtitlesAssPath && fs.existsSync(subtitlesAssPath)) {
       const escapedSubPath = this._escapeAssPath(subtitlesAssPath);
-      videoFilter += `;[${currentStream}]subtitles='${escapedSubPath}'[vout]`;
+      videoFilter += `;[${currentStream}]subtitles=filename='${escapedSubPath}'[vout]`;
       currentStream = 'vout';
     } else {
       videoFilter += `;[${currentStream}]copy[vout]`;
@@ -212,7 +213,7 @@ export class VideoProcessor {
    */
   _escapeAssPath(filePath) {
     const normalized = path.resolve(filePath).replace(/\\/g, '/');
-    return normalized.replace(/:/g, '\\:');
+    return normalized.replace(/:/g, '\\:').replace(/'/g, "\\'");
   }
 
   _runFFmpeg(args, taskName = 'FFmpeg') {

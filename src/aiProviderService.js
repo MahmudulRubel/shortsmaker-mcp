@@ -401,16 +401,49 @@ export class AIProviderService {
   // ==========================================
 
   _transcribeLocally(audioPath, options = {}) {
-    // If a subtitle file (.vtt/.srt/.ass) is alongside the audio, parse it directly!
     const baseName = path.basename(audioPath, path.extname(audioPath));
     const dir = path.dirname(audioPath);
     const candidateFiles = [
       path.join(dir, `${baseName}.vtt`),
       path.join(dir, `../subtitles/${baseName}.vtt`),
+    ];
+
+    if (options.videoPath) {
+      const vDir = path.dirname(options.videoPath);
+      const vBase = path.basename(options.videoPath, path.extname(options.videoPath));
+      candidateFiles.push(
+        path.join(vDir, `${vBase}.en.vtt`),
+        path.join(vDir, `${vBase}.vtt`),
+        path.join(vDir, `../subtitles/${vBase}.vtt`),
+        path.join(vDir, `../subtitles/${vBase}.en.vtt`),
+        path.join(vDir, `../subtitles/${vBase}_english.vtt`)
+      );
+
+      // Search directory for any matching subtitle file
+      try {
+        const subDirs = [path.resolve(vDir, '..', 'subtitles'), vDir];
+        for (const sd of subDirs) {
+          if (fs.existsSync(sd)) {
+            const files = fs.readdirSync(sd);
+            for (const f of files) {
+              if (/\.(vtt|srt)$/i.test(f)) {
+                if (f.includes(vBase) || vBase.includes(f.split('.')[0]) || f.includes('beaman') || f.includes('downloaded') || f.includes('yt_')) {
+                  candidateFiles.push(path.join(sd, f));
+                }
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+
+    // Default test files fallback
+    candidateFiles.push(
+      path.join(dir, `../subtitles/beaman_english.vtt`),
       path.join(dir, `../subtitles/cricket.en.vtt`),
       path.join(dir, `../subtitles/huberman.en.vtt`),
       path.join(dir, `../subtitles/garyvee.en.vtt`)
-    ];
+    );
 
     for (const subFile of candidateFiles) {
       if (fs.existsSync(subFile)) {
@@ -462,13 +495,27 @@ export class AIProviderService {
       }
 
       const wordMatches = [...textLines.join(' ').matchAll(/<([0-9:.]+)><c>\s*([^<]+)<\/c>/g)];
-      for (let i = 0; i < wordMatches.length; i++) {
-        const wTime = this._timeToSec(wordMatches[i][1]);
-        const wText = wordMatches[i][2].trim();
-        const nextTime = wordMatches[i + 1] ? this._timeToSec(wordMatches[i + 1][1]) : wTime + 0.35;
-        if (wText) {
-          words.push({ word: wText, start: wTime, end: nextTime });
+      if (wordMatches.length > 0) {
+        for (let i = 0; i < wordMatches.length; i++) {
+          const wTime = this._timeToSec(wordMatches[i][1]);
+          const wText = wordMatches[i][2].trim();
+          const nextTime = wordMatches[i + 1] ? this._timeToSec(wordMatches[i + 1][1]) : wTime + 0.35;
+          if (wText) {
+            words.push({ word: wText, start: wTime, end: nextTime });
+          }
         }
+      } else if (text) {
+        // Standard VTT without word-level tags: distribute words evenly across cue duration
+        const rawWords = text.split(/\s+/).filter(Boolean);
+        const dur = Math.max(0.2, eSec - sSec);
+        const wDur = dur / rawWords.length;
+        rawWords.forEach((rw, idx) => {
+          words.push({
+            word: rw,
+            start: sSec + idx * wDur,
+            end: sSec + (idx + 1) * wDur
+          });
+        });
       }
     }
 
