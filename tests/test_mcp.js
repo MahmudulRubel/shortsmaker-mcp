@@ -1,11 +1,15 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { SubtitleGenerator } from '../src/subtitleGenerator.js';
 import { VideoProcessor } from '../src/videoProcessor.js';
 import { AIProviderService } from '../src/aiProviderService.js';
 import { SmartPacing } from '../src/smartPacing.js';
 import { SFXEngine } from '../src/sfxEngine.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 async function runTests() {
   console.log('--- [ShortsMaker 10X Master Verification Suite] ---');
@@ -136,13 +140,37 @@ async function runTests() {
     throw new Error(`Unexpected dimensions: expected 1080x1920, got ${outMeta.width}x${outMeta.height}`);
   }
 
-  // Step 7: Clean up temp test directory
+  // Step 7: Verify ContextZen Specification Files
+  console.log('[7/8] Verifying ContextZen Methodology Files...');
+  const contextDir = path.resolve(__dirname, '..', 'context');
+  const requiredContexts = [
+    'project-overview.md',
+    'architecture.md',
+    'ui-context.md',
+    'code-standards.md',
+    'ai-workflow-rules.md',
+    'progress-tracker.md'
+  ];
+  for (const cFile of requiredContexts) {
+    if (!fs.existsSync(path.join(contextDir, cFile))) {
+      throw new Error(`ContextZen file missing: context/${cFile}`);
+    }
+  }
+  const entryPoints = ['AGENTS.md', 'CLAUDE.md', '.cursorrules', '.windsurfrules'];
+  for (const ep of entryPoints) {
+    if (!fs.existsSync(path.resolve(__dirname, '..', ep))) {
+      throw new Error(`Entry point missing: ${ep}`);
+    }
+  }
+  console.log('✓ All 6 ContextZen files and 4 IDE entry points verified.');
+
+  // Step 8: Clean up temp test directory
   fs.rmSync(tempDir, { recursive: true, force: true });
-  console.log('[7/7] Cleaned up temporary test files.');
+  console.log('[8/8] Cleaned up temporary test files.');
 
   console.log('\n======================================================');
-  console.log('🎉 ALL 7/7 10X VERIFICATION CHECKS PASSED!');
-  console.log('Smart Pacing, Foley SFX, Kinetic Subtitles & Batch Ready');
+  console.log('🎉 ALL 8/8 10X VERIFICATION CHECKS PASSED!');
+  console.log('ContextZen, Smart Pacing, Foley SFX, Subtitles & Batch Ready');
   console.log('======================================================');
 }
 

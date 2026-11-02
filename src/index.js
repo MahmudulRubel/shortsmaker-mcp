@@ -26,7 +26,7 @@ dotenv.config();
 const server = new Server(
   {
     name: 'shortsmaker-mcp',
-    version: '2.2.0',
+    version: '2.3.0',
   },
   {
     capabilities: {
@@ -63,6 +63,30 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         inputSchema: {
           type: 'object',
           properties: {},
+        },
+      },
+      {
+        name: 'get_project_context',
+        description:
+          'Retrieves ContextZen methodology context (AGENTS.md, architecture, invariants, UI rules, code standards, progress tracker) so connected AI agents understand the codebase before making changes.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            topic: {
+              type: 'string',
+              enum: [
+                'all',
+                'project-overview',
+                'architecture',
+                'ui-context',
+                'code-standards',
+                'ai-workflow-rules',
+                'progress-tracker',
+              ],
+              description: 'Which ContextZen topic to inspect. Defaults to "all".',
+              default: 'all',
+            },
+          },
         },
       },
       {
@@ -354,6 +378,42 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               ),
             },
           ],
+        };
+      }
+
+      case 'get_project_context': {
+        const topic = args?.topic || 'all';
+        const contextDir = path.resolve(__dirname, '..', 'context');
+        const filesMap = {
+          'project-overview': 'project-overview.md',
+          'architecture': 'architecture.md',
+          'ui-context': 'ui-context.md',
+          'code-standards': 'code-standards.md',
+          'ai-workflow-rules': 'ai-workflow-rules.md',
+          'progress-tracker': 'progress-tracker.md',
+        };
+
+        if (topic !== 'all' && filesMap[topic]) {
+          const filePath = path.join(contextDir, filesMap[topic]);
+          const content = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf-8') : `File not found: ${filesMap[topic]}`;
+          return {
+            content: [{ type: 'text', text: content }],
+          };
+        }
+
+        let aggregated = `# ShortsMaker MCP — ContextZen Specification\n\n`;
+        const agentsFile = path.resolve(__dirname, '..', 'AGENTS.md');
+        if (fs.existsSync(agentsFile)) {
+          aggregated += `=== AGENTS.md ===\n\n${fs.readFileSync(agentsFile, 'utf-8')}\n\n`;
+        }
+        for (const [key, fileName] of Object.entries(filesMap)) {
+          const filePath = path.join(contextDir, fileName);
+          if (fs.existsSync(filePath)) {
+            aggregated += `=== context/${fileName} ===\n\n${fs.readFileSync(filePath, 'utf-8')}\n\n`;
+          }
+        }
+        return {
+          content: [{ type: 'text', text: aggregated }],
         };
       }
 

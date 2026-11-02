@@ -1,6 +1,6 @@
 {
   "name": "shortsmaker",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "10X Next-Gen AI Long-Video-to-Shorts MCP Server (Face Tracking + Sweet Spot 40-60s + Zero-API Local Mode)",
   "type": "module",
   "main": "src/index.js",
