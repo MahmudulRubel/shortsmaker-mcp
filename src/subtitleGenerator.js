@@ -141,6 +141,10 @@ export class SubtitleGenerator {
     if (wordList.length === 0 && chunks.length > 0) {
       wordList = this._synthesizeWordsFromChunks(chunks, clipStartTime, clipEndTime, style.uppercase);
     }
+    if (wordList.length === 0) {
+      const dur = Math.max(5, clipEndTime - clipStartTime);
+      wordList = this._generateFallbackRhythmWords(dur, style.uppercase, hookBannerText);
+    }
 
     // Group into 1-2 words per visual beat
     const phrases = this._groupWordsIntoPhrases(wordList, maxWordsPerBeat);
@@ -255,6 +259,51 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         });
       });
     }
+    return words;
+  }
+
+  static _generateFallbackRhythmWords(duration, uppercase = true, hookText = null) {
+    const defaultPhrases = [
+      ['WATCH', 'CLOSELY'],
+      ['LISTEN', 'TO THIS'],
+      ['THE REAL', 'TRUTH'],
+      ['EVERY SECOND', 'COUNTS'],
+      ['NEVER', 'GIVE UP'],
+      ['STOP', 'SCROLLING'],
+      ['TAKE', 'ACTION'],
+      ['THIS CHANGES', 'EVERYTHING'],
+      ['PAY', 'ATTENTION'],
+      ['DROP THE', 'EXCUSES'],
+      ['STAND', 'FIRM'],
+      ['STAY', 'FOCUSED'],
+      ['REMEMBER', 'THIS'],
+      ['FINAL', 'PAYOFF']
+    ];
+
+    if (hookText) {
+      const hookWords = hookText.split(/\s+/).filter(Boolean);
+      if (hookWords.length >= 2) {
+        defaultPhrases[0] = [hookWords[0], hookWords[1]];
+      }
+    }
+
+    const words = [];
+    const step = 2.2;
+    let t = 0.5;
+    let phraseIdx = 0;
+
+    while (t < duration - 0.5) {
+      const pair = defaultPhrases[phraseIdx % defaultPhrases.length];
+      const w1 = uppercase ? pair[0].toUpperCase() : pair[0];
+      const w2 = uppercase ? pair[1].toUpperCase() : pair[1];
+
+      words.push({ word: w1, start: t, end: t + 0.7 });
+      words.push({ word: w2, start: t + 0.7, end: t + 1.4 });
+
+      t += step;
+      phraseIdx++;
+    }
+
     return words;
   }
 }

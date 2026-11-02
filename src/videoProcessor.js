@@ -1,14 +1,18 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { SFXEngine } from './sfxEngine.js';
 import { SmartPacing } from './smartPacing.js';
 import { FaceTracker } from './faceTracker.js';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 export class VideoProcessor {
   constructor(ffmpegPath = 'ffmpeg') {
     this.ffmpegPath = ffmpegPath;
-    this.sfxDir = path.resolve('./storage/sfx');
+    this.sfxDir = path.resolve(__dirname, '..', 'storage', 'sfx');
     this.sfxEngine = new SFXEngine(this.sfxDir);
     this.faceTracker = new FaceTracker();
   }
@@ -115,7 +119,9 @@ export class VideoProcessor {
     let videoFilter = '';
 
     let cropXExpr = '(in_w-out_w)/2';
-    if (faceTracking && layout === 'viral_fullscreen_punch') {
+    const isFullscreenVertical = layout !== 'blurred_background' && layout !== 'split_screen';
+
+    if (faceTracking && isFullscreenVertical) {
       try {
         const ftRes = await this.faceTracker.getTrackingCropFilter(inputPath, startTime, duration);
         if (ftRes && ftRes.cropXExpr) {
@@ -126,9 +132,9 @@ export class VideoProcessor {
       }
     }
 
-    if (layout === 'viral_fullscreen_punch' || layout === 'smart_crop') {
+    if (isFullscreenVertical) {
       if (enableZoomPunches) {
-        // Alternating 1.0x and 1.25x punch-in zoom every 3.2s with tracked face center
+        // Alternating 1.0x and 1.25x punch-in zoom every 3.2s with continuous tracked face center
         videoFilter = `[0:v]crop=w='if(mod(floor(t/3.2),2), 324*ih/720, 405*ih/720)':h='if(mod(floor(t/3.2),2), 576*ih/720, ih)':x='if(mod(floor(t/3.2),2), (${cropXExpr})+40*ih/720, ${cropXExpr})':y='if(mod(floor(t/3.2),2), 72*ih/720, (in_h-out_h)/2)',scale=1080:1920`;
       } else {
         videoFilter = `[0:v]crop=w=ih*9/16:h=ih:x='${cropXExpr}':y=0,scale=1080:1920`;
@@ -143,7 +149,7 @@ export class VideoProcessor {
     } else if (layout === 'split_screen') {
       videoFilter = '[0:v]scale=1080:-1[wide];[0:v]crop=ih*9/16:ih:(iw-ow)/2:0,scale=1080:960[top];[wide]scale=1080:960:force_original_aspect_ratio=increase,crop=1080:960[bot];[top][bot]vstack[vbase]';
     } else {
-      // Blurred background
+      // Blurred background (only when explicitly requested)
       videoFilter = '[0:v]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,boxblur=8:8,scale=1080:1920[bg];[0:v]scale=1080:-2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2[vbase]';
     }
 

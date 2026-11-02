@@ -1,22 +1,45 @@
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export class FaceTracker {
-  constructor(pythonCmd = 'py -3.13') {
-    this.pythonCmd = pythonCmd;
-    this.scriptPath = path.resolve('./src/face_tracker.py');
+  constructor(pythonCmd = null) {
+    this.pythonCmd = pythonCmd || this._detectPython();
+    this.scriptPath = path.resolve(__dirname, 'face_tracker.py');
+  }
+
+  _detectPython() {
+    if (process.env.PYTHON_PATH) return process.env.PYTHON_PATH;
+
+    const candidates = process.platform === 'win32'
+      ? ['py -3.13', 'py', 'python', 'python3']
+      : ['python3', 'python'];
+
+    for (const cmd of candidates) {
+      try {
+        const bin = cmd.split(' ')[0];
+        const args = [...cmd.split(' ').slice(1), '--version'];
+        execSync(`${cmd} --version`, { stdio: 'ignore', timeout: 1500 });
+        return cmd;
+      } catch {}
+    }
+    return process.platform === 'win32' ? 'python' : 'python3';
   }
 
   /**
    * Run face tracking on video segment and generate FFmpeg crop expression
-   * @param {string} videoPath 
-   * @param {number} startTime 
-   * @param {number} duration 
-   * @returns {Promise<{cropFilter: string, keypoints: Array}>}
    */
   async getTrackingCropFilter(videoPath, startTime, duration) {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
+      if (!fs.existsSync(this.scriptPath)) {
+        console.warn(`[FaceTracker] face_tracker.py not found at ${this.scriptPath}. Using center crop.`);
+        return resolve({ cropXExpr: '(in_w-out_w)/2', keypoints: [] });
+      }
+
       const parts = this.pythonCmd.split(' ');
       const bin = parts[0];
       const extraArgs = parts.slice(1);
@@ -38,27 +61,20 @@ export class FaceTracker {
 
       proc.on('close', code => {
         if (code !== 0) {
-          console.warn(`[FaceTracker] Warning: Python tracker exited with code ${code}. Falling back to center crop.`);
-          return resolve({
-            cropXExpr: '(in_w-out_w)/2',
-            keypoints: []
-          });
+          console.warn(`[FaceTracker] Python tracker returned code ${code}. Falling back to center crop.`);
+          return resolve({ cropXExpr: '(in_w-out_w)/2', keypoints: [] });
         }
 
         try {
-          // Parse last JSON line from stdout
           const lines = stdout.trim().split('\n');
           const lastLine = lines[lines.length - 1];
           const data = JSON.parse(lastLine);
 
           if (!data.keypoints || data.keypoints.length === 0) {
-            return resolve({
-              cropXExpr: '(in_w-out_w)/2',
-              keypoints: []
-            });
+            return resolve({ cropXExpr: '(in_w-out_w)/2', keypoints: [] });
           }
 
-          // Sample down keypoints to ~every 1.5s for clean, non-bloated FFmpeg expression
+          // Sample down keypoints to ~every 1.5s for a clean FFmpeg expression
           const downsampled = [];
           let lastT = -999;
           for (const kp of data.keypoints) {
@@ -69,15 +85,11 @@ export class FaceTracker {
           }
 
           if (downsampled.length <= 1) {
-            const x = downsampled[0]?.x || 220;
-            return resolve({
-              cropXExpr: String(x),
-              keypoints: downsampled
-            });
+            const x = downsampled[0]?.x || Math.round((data.width - data.crop_w) / 2);
+            return resolve({ cropXExpr: String(x), keypoints: downsampled });
           }
 
-          // Build nested linear interpolation expression:
-          // if(lte(t, t1), lerp(x0, x1), if(lte(t, t2), ...))
+          // Build nested linear interpolation expression for FFmpeg
           let expr = String(downsampled[downsampled.length - 1].x);
           for (let i = downsampled.length - 2; i >= 0; i--) {
             const p0 = downsampled[i];
@@ -88,25 +100,16 @@ export class FaceTracker {
             expr = `if(lte(t,${p1.t.toFixed(1)}),${lerp},${expr})`;
           }
 
-          resolve({
-            cropXExpr: expr,
-            keypoints: downsampled
-          });
+          resolve({ cropXExpr: expr, keypoints: downsampled });
         } catch (err) {
           console.warn(`[FaceTracker] JSON parse error: ${err.message}. Falling back.`);
-          resolve({
-            cropXExpr: '(in_w-out_w)/2',
-            keypoints: []
-          });
+          resolve({ cropXExpr: '(in_w-out_w)/2', keypoints: [] });
         }
       });
 
       proc.on('error', err => {
         console.warn(`[FaceTracker] Process spawn error: ${err.message}. Falling back.`);
-        resolve({
-          cropXExpr: '(in_w-out_w)/2',
-          keypoints: []
-        });
+        resolve({ cropXExpr: '(in_w-out_w)/2', keypoints: [] });
       });
     });
   }

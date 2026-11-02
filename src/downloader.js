@@ -3,12 +3,17 @@ import path from 'path';
 import { spawn } from 'child_process';
 import https from 'https';
 import http from 'http';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const defaultInputDir = path.resolve(__dirname, '..', 'storage', 'inputs');
 
 export class VideoDownloader {
   /**
    * Resolves a video source (local file or remote URL) to a local file path
    */
-  static async resolveSource(source, outputDir = './storage/inputs') {
+  static async resolveSource(source, outputDir = defaultInputDir) {
     fs.mkdirSync(outputDir, { recursive: true });
 
     // If it's already a local file
@@ -94,6 +99,10 @@ export class VideoDownloader {
       const proc = spawn(binPath, [
         '--js-runtimes', 'node',
         '-f', 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]/best',
+        '--write-auto-subs',
+        '--write-subs',
+        '--sub-lang', 'en.*,en',
+        '--convert-subs', 'vtt',
         '-o', outputTemplate,
         '--no-playlist',
         url

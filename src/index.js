@@ -8,6 +8,7 @@ import {
 import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
 
 import { AIProviderService } from './aiProviderService.js';
 import { VideoProcessor } from './videoProcessor.js';
@@ -16,6 +17,9 @@ import { VideoDownloader } from './downloader.js';
 import { SmartPacing } from './smartPacing.js';
 
 dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const server = new Server(
   {
@@ -31,7 +35,7 @@ const server = new Server(
 
 const aiProvider = new AIProviderService();
 const videoProcessor = new VideoProcessor();
-const storageDir = path.resolve('./storage');
+const storageDir = process.env.SHORTSMAKER_STORAGE_DIR || path.resolve(__dirname, '..', 'storage');
 
 fs.mkdirSync(path.join(storageDir, 'inputs'), { recursive: true });
 fs.mkdirSync(path.join(storageDir, 'audio'), { recursive: true });
