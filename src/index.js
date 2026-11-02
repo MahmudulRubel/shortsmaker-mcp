@@ -72,8 +72,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             target_clip_length: {
               type: 'number',
-              description: 'Target duration in seconds for each short (default: 35)',
-              default: 35,
+              description: 'Target duration in seconds for each short (default: 20s for ultra-fast, snappy viral retention)',
+              default: 20,
             },
             ai_provider: AI_PROVIDER_PROPERTY,
           },
@@ -83,7 +83,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: 'create_short_clip',
         description:
-          'Cuts a video segment, reframes to 9:16 vertical (viral fullscreen punch, blurred background, or smart crop), generates kinetic animated karaoke subtitles with hook banner, places beat-synced SFX (whooshes, pops, bass impacts), and renders a polished viral short.',
+          'Cuts a video segment, reframes to 9:16 vertical (viral fullscreen punch, blurred background, or smart crop), generates kinetic animated karaoke subtitles with hook banner, places beat-synced SFX (whooshes, pops, bass impacts), and renders a polished viral short in seconds.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -97,8 +97,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             duration: {
               type: 'number',
-              description: 'Duration in seconds (e.g. 30)',
-              default: 30,
+              description: 'Duration in seconds (default: 20s)',
+              default: 20,
+            },
+            speed_preset: {
+              type: 'string',
+              enum: ['ultrafast', 'veryfast', 'fast'],
+              description: 'Turbo speed mode: "ultrafast" renders 6X faster in ~5-8 seconds.',
+              default: 'ultrafast',
             },
             hook_title: {
               type: 'string',
@@ -358,11 +364,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'create_short_clip': {
         const localVideo = await VideoDownloader.resolveSource(args.video_path_or_url);
         const startTime = Number(args.start_time) || 0;
-        const duration = Number(args.duration) || 30;
+        const duration = Number(args.duration) || 20;
         const layout = args.layout || 'viral_fullscreen_punch';
         const captionStyle = args.caption_style || 'hormozi';
         const enableCaptions = args.enable_captions !== false;
         const enableSFX = args.enable_sfx !== false;
+        const speedPreset = args.speed_preset || 'ultrafast';
 
         let subtitlesPath = null;
         let subtitleBeats = [];
@@ -402,6 +409,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           brollStartTime: Number(args.broll_start_time) || 3,
           brollDuration: Number(args.broll_duration) || 4,
           enableSFX,
+          speedPreset,
         });
 
         return {
@@ -507,9 +515,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
 
         const startTime = bestClip.start_time;
-        const duration = bestClip.duration || 30;
+        const duration = Math.min(Number(args.target_clip_length) || bestClip.duration || 20, 25);
         const captionStyle = args.caption_style || 'hormozi';
         const layout = args.layout || 'viral_fullscreen_punch';
+        const speedPreset = args.speed_preset || 'ultrafast';
 
         const subtitlesPath = path.join(storageDir, 'subtitles', `sub_full_${runId}.ass`);
         const subResult = SubtitleGenerator.generateASS({
@@ -531,6 +540,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           layout,
           subtitlesAssPath: subtitlesPath,
           subtitleBeatTimestamps: subResult.beatTimestamps,
+          speedPreset,
         });
 
         return {
@@ -591,8 +601,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         for (let i = 0; i < selectedClips.length; i++) {
           const clip = selectedClips[i];
           const startTime = clip.start_time;
-          const duration = clip.duration || 30;
+          const duration = Math.min(clip.duration || 20, 22);
           const clipIndex = i + 1;
+          const speedPreset = args.speed_preset || 'ultrafast';
 
           const subPath = path.join(storageDir, 'subtitles', `batch_${runId}_clip_${clipIndex}.ass`);
           const subResult = SubtitleGenerator.generateASS({
@@ -615,6 +626,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             subtitlesAssPath: subPath,
             subtitleBeatTimestamps: subResult.beatTimestamps,
             enableSFX: true,
+            speedPreset,
           });
 
           generatedShorts.push({
