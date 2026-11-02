@@ -9,7 +9,7 @@ import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
 
-import { ReplicateService } from './replicateService.js';
+import { AIProviderService } from './aiProviderService.js';
 import { VideoProcessor } from './videoProcessor.js';
 import { SubtitleGenerator } from './subtitleGenerator.js';
 import { VideoDownloader } from './downloader.js';
@@ -19,7 +19,7 @@ dotenv.config();
 const server = new Server(
   {
     name: 'shortsmaker-mcp',
-    version: '1.0.0',
+    version: '1.1.0',
   },
   {
     capabilities: {
@@ -28,7 +28,7 @@ const server = new Server(
   }
 );
 
-const replicateService = new ReplicateService();
+const aiProvider = new AIProviderService();
 const videoProcessor = new VideoProcessor();
 const storageDir = path.resolve('./storage');
 
@@ -38,14 +38,30 @@ fs.mkdirSync(path.join(storageDir, 'subtitles'), { recursive: true });
 fs.mkdirSync(path.join(storageDir, 'outputs'), { recursive: true });
 fs.mkdirSync(path.join(storageDir, 'broll'), { recursive: true });
 
+const AI_PROVIDER_PROPERTY = {
+  type: 'string',
+  enum: ['auto', 'local', 'openai', 'groq', 'gemini', 'anthropic', 'deepgram', 'replicate'],
+  description: 'AI Provider to use. Select "local" for 100% Free / Zero-API operation (FFmpeg + local subtitles). Defaults to "auto" (uses first configured API key, or falls back to local).',
+  default: 'auto',
+};
+
 // Define available tools
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
       {
+        name: 'list_ai_providers',
+        description:
+          'Lists all available AI providers (Local, OpenAI, Groq, Gemini, Anthropic, Deepgram, Replicate), shows which API keys are configured, and indicates the active default provider.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        },
+      },
+      {
         name: 'analyze_long_video',
         description:
-          'Transcribes a long video, analyzes storytelling and audience retention curves using AI, and identifies ranked viral short-form moments with virality scores (0-100), hook strength, timestamps, and highlight keywords.',
+          'Transcribes a long video, analyzes storytelling and audience retention curves using AI (or local audio heuristics), and identifies ranked viral short-form moments with virality scores (0-100), hook strength, timestamps, and highlight keywords.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -58,6 +74,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               description: 'Target duration in seconds for each short (default: 35)',
               default: 35,
             },
+            ai_provider: AI_PROVIDER_PROPERTY,
           },
           required: ['video_path_or_url'],
         },
@@ -65,7 +82,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: 'create_short_clip',
         description:
-          'Cuts a video segment, reframes to 9:16 vertical (blurred background, smart crop, or split screen), generates word-by-word animated karaoke subtitles (Hormozi / MrBeast style with emojis), and renders a polished viral short.',
+          'Cuts a video segment, reframes to 9:16 vertical (viral fullscreen punch, blurred background, or smart crop), generates word-by-word animated karaoke subtitles (Hormozi / MrBeast style with emojis), and renders a polished viral short.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -118,6 +135,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: 'string',
               description: 'Optional custom output filename (e.g. short_1.mp4)',
             },
+            ai_provider: AI_PROVIDER_PROPERTY,
           },
           required: ['video_path_or_url', 'start_time'],
         },
@@ -125,7 +143,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: 'generate_broll_cutaway',
         description:
-          'Uses Replicate (Flux-Schnell) to generate contextual 9:16 AI B-roll images matching your clip topic to break monotony and boost visual retention.',
+          'Generates contextual 9:16 AI B-roll images matching your clip topic to break monotony and boost visual retention (via DALL-E, Flux, or local aesthetic canvas).',
         inputSchema: {
           type: 'object',
           properties: {
@@ -138,6 +156,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               description: 'Style description (default: photorealistic cinematic vertical 9:16)',
               default: 'photorealistic cinematic vertical 9:16',
             },
+            ai_provider: AI_PROVIDER_PROPERTY,
           },
           required: ['prompt'],
         },
@@ -185,9 +204,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             layout: {
               type: 'string',
-              enum: ['blurred_background', 'smart_crop', 'split_screen'],
-              default: 'blurred_background',
+              enum: ['viral_fullscreen_punch', 'blurred_background', 'smart_crop', 'split_screen'],
+              default: 'viral_fullscreen_punch',
             },
+            ai_provider: AI_PROVIDER_PROPERTY,
           },
           required: ['video_path_or_url'],
         },
@@ -196,21 +216,81 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 
-// Execute MCP Tool Calls
+// Handle tool executions
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
   const runId = Date.now();
 
   try {
     switch (name) {
+      case 'list_ai_providers': {
+        const available = aiProvider.getAvailableProviders();
+        const active = aiProvider.getActiveProvider();
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  active_default_provider: active,
+                  providers: {
+                    local: {
+                      enabled: true,
+                      cost: '$0.00 (Zero AI API)',
+                      description: '100% offline FFmpeg audio peak detection & subtitle parser',
+                    },
+                    groq: {
+                      enabled: available.groq,
+                      env_key: 'GROQ_API_KEY',
+                      models: 'whisper-large-v3, llama-3.3-70b-versatile',
+                    },
+                    openai: {
+                      enabled: available.openai,
+                      env_key: 'OPENAI_API_KEY',
+                      models: 'whisper-1, gpt-4o-mini, dall-e-3',
+                    },
+                    gemini: {
+                      enabled: available.gemini,
+                      env_key: 'GEMINI_API_KEY',
+                      models: 'gemini-1.5-flash',
+                    },
+                    anthropic: {
+                      enabled: available.anthropic,
+                      env_key: 'ANTHROPIC_API_KEY',
+                      models: 'claude-3-5-haiku',
+                    },
+                    deepgram: {
+                      enabled: available.deepgram,
+                      env_key: 'DEEPGRAM_API_KEY',
+                      models: 'nova-2',
+                    },
+                    replicate: {
+                      enabled: available.replicate,
+                      env_key: 'REPLICATE_API_TOKEN',
+                      models: 'incredibly-fast-whisper, llama-3, flux-schnell',
+                    },
+                  },
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
       case 'analyze_long_video': {
         const localVideo = await VideoDownloader.resolveSource(args.video_path_or_url);
         const metadata = await videoProcessor.getVideoMetadata(localVideo);
         const audioPath = path.join(storageDir, 'audio', `audio_${runId}.mp3`);
         await videoProcessor.extractAudio(localVideo, audioPath);
 
-        const transcription = await replicateService.transcribe(audioPath);
-        const analysis = await replicateService.analyzeVirality(transcription, metadata.duration);
+        const transcription = await aiProvider.transcribeAudio(audioPath, {
+          provider: args.ai_provider,
+        });
+        const analysis = await aiProvider.analyzeVirality(transcription, metadata.duration, {
+          provider: args.ai_provider,
+        });
 
         return {
           content: [
@@ -219,6 +299,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               text: JSON.stringify(
                 {
                   status: 'success',
+                  active_provider: aiProvider.getActiveProvider(args.ai_provider),
                   video_path: localVideo,
                   duration_seconds: metadata.duration,
                   resolution: `${metadata.width}x${metadata.height}`,
@@ -246,7 +327,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (enableCaptions) {
           const audioPath = path.join(storageDir, 'audio', `clip_${runId}.mp3`);
           await videoProcessor.extractAudio(localVideo, audioPath);
-          const transcription = await replicateService.transcribe(audioPath);
+          const transcription = await aiProvider.transcribeAudio(audioPath, {
+            provider: args.ai_provider,
+          });
 
           subtitlesPath = path.join(storageDir, 'subtitles', `sub_${runId}.ass`);
           SubtitleGenerator.generateASS({
@@ -288,6 +371,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   duration,
                   aspect_ratio: '9:16 (1080x1920)',
                   subtitles_burned: enableCaptions,
+                  provider_used: aiProvider.getActiveProvider(args.ai_provider),
                 },
                 null,
                 2
@@ -298,12 +382,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'generate_broll_cutaway': {
-        const result = await replicateService.generateBRollVisual(args.prompt, args.style);
-        const brollPath = path.join(storageDir, 'broll', `broll_${runId}.png`);
-
-        if (result.url.startsWith('http')) {
-          await VideoDownloader._downloadDirectFile(result.url, brollPath);
-        }
+        const visual = await aiProvider.generateBRollVisual(args.prompt, {
+          provider: args.ai_provider,
+          style: args.style,
+        });
 
         return {
           content: [
@@ -312,9 +394,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               text: JSON.stringify(
                 {
                   status: 'success',
-                  prompt: result.prompt,
-                  remote_url: result.url,
-                  local_path: path.resolve(brollPath),
+                  broll_url: visual.url,
+                  prompt: visual.prompt,
+                  provider_used: visual.provider || aiProvider.getActiveProvider(args.ai_provider),
+                  message: visual.message || 'AI B-Roll generated successfully',
                 },
                 null,
                 2
@@ -326,17 +409,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case 'generate_viral_metadata': {
         const headline = args.topic_or_headline;
-        const keywords = args.keywords || ['viral', 'shorts', 'tips'];
+        const keywords = args.keywords || ['growth', 'viral', 'secret'];
 
         const metadata = {
-          headline,
           tiktok: {
-            title: `${headline} 🔥 (wait for the end)`,
-            hashtags: ['#fyp', '#foryou', '#viral', '#learnontiktok', ...keywords.map((k) => `#${k.replace(/\s+/g, '')}`)],
-            caption: `${headline} 👇 Comment your thoughts below!\n\nSave this for later.`,
+            title: `${headline} 🤯 #fyp #viral #learnontiktok`,
+            caption: `Wait till the end... The biggest revelation about ${keywords[0] || 'success'} you will ever hear.`,
+            hashtags: ['#fyp', '#viral', '#tiktokgrowth', ...keywords.map((k) => `#${k.replace(/\s+/g, '')}`)],
           },
           youtube_shorts: {
-            title: `${headline} #shorts`,
+            title: `${headline} (Mind-Blowing Truth) #shorts`,
             description: `Key insight on ${keywords.join(', ')}.\n\nSubscribe for more daily growth gems.`,
             tags: keywords,
           },
@@ -362,8 +444,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const audioPath = path.join(storageDir, 'audio', `full_${runId}.mp3`);
         await videoProcessor.extractAudio(localVideo, audioPath);
 
-        const transcription = await replicateService.transcribe(audioPath);
-        const analysis = await replicateService.analyzeVirality(transcription, metadata.duration);
+        const transcription = await aiProvider.transcribeAudio(audioPath, {
+          provider: args.ai_provider,
+        });
+        const analysis = await aiProvider.analyzeVirality(transcription, metadata.duration, {
+          provider: args.ai_provider,
+        });
 
         const bestClip = analysis.clips?.[0] || {
           start_time: 0,
@@ -412,6 +498,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   caption_style: captionStyle,
                   layout,
                   suggested_title: `${bestClip.headline} 🔥 #shorts`,
+                  provider_used: aiProvider.getActiveProvider(args.ai_provider),
                 },
                 null,
                 2

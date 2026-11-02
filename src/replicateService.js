@@ -3,23 +3,20 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 export class ReplicateService {
-  constructor(apiToken = process.env.REPLICATE_API_TOKEN) {
-    this.apiToken = apiToken;
+  constructor(apiToken = undefined) {
+    this.apiToken = apiToken !== undefined ? apiToken : process.env.REPLICATE_API_TOKEN;
     if (this.apiToken) {
       this.replicate = new Replicate({ auth: this.apiToken });
     }
   }
 
   hasToken() {
-    return Boolean(this.apiToken || process.env.REPLICATE_API_TOKEN);
+    return Boolean(this.apiToken);
   }
 
   getClient() {
-    if (!this.replicate) {
-      const token = this.apiToken || process.env.REPLICATE_API_TOKEN;
-      if (token) {
-        this.replicate = new Replicate({ auth: token });
-      }
+    if (!this.replicate && this.apiToken) {
+      this.replicate = new Replicate({ auth: this.apiToken });
     }
     return this.replicate;
   }
