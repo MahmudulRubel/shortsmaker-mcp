@@ -12,6 +12,7 @@ ShortsMaker MCP is developed using an incremental, spec-driven workflow guided b
 2. **One Feature Unit at a Time**: Complete, verify, and test a single component before moving to the next.
 3. **No Speculative Rewrites**: Do not replace working core libraries (e.g., swapping FFmpeg with another tool) unless explicitly ordered.
 4. **Preserve Compatibility**: Keep the MCP tool interfaces (`analyze_long_video`, `create_short_clip`, `generate_broll_cutaway`, `generate_viral_metadata`, `full_pipeline`) backward-compatible.
+5. **Interactive User Onboarding**: When a user requests video processing without all parameters, conduct the interactive onboarding interview with selectable options (video source, count, 40-60s sweet spot duration, caption style, and framing).
 
 ---
 

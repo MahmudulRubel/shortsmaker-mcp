@@ -24,11 +24,13 @@ Update this tracker after every meaningful implementation change.
 - [x] MediaPipe AI face tracking with dynamic camera pan and smooth `lerp`.
 - [x] FFmpeg subtitle path escaping (`subtitles=filename='...'`).
 - [x] Comprehensive test suite in `tests/test_mcp.js`.
+- [x] Interactive User Onboarding System (`get_onboarding_wizard` tool + MCP Prompts `onboarding_wizard` and `create_viral_shorts`).
+- [x] IDE onboarding interview protocol added to `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, and `.windsurfrules`.
 
 ---
 
 ## In Progress
-- [ ] Optional programmatic ContextZen retrieval tool via MCP protocol.
+- [ ] Live user onboarding interview execution.
 
 ---
 

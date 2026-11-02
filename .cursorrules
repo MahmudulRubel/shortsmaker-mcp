@@ -12,6 +12,7 @@ Before starting tasks, read:
 6. `context/progress-tracker.md` — Build queue and version status
 
 ## Execution Rules
+- When a user asks to make shorts, prompt them with the interactive onboarding questionnaire (video URL, count, 40-60s sweet spot duration, caption style, framing) with selectable options.
 - Always update `context/progress-tracker.md` after finishing a task.
 - Never violate the 5 non-negotiable invariants in `context/architecture.md`.
 - Keep edits focused tightly on the requested file or component.

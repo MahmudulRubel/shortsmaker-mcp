@@ -4,6 +4,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  ListPromptsRequestSchema,
+  GetPromptRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import path from 'path';
 import fs from 'fs';
@@ -31,6 +33,7 @@ const server = new Server(
   {
     capabilities: {
       tools: {},
+      prompts: {},
     },
   }
 );
@@ -87,6 +90,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               default: 'all',
             },
           },
+        },
+      },
+      {
+        name: 'get_onboarding_wizard',
+        description:
+          'Returns the interactive onboarding questionnaire and configuration options (video source, number of clips, duration sweet spot, caption style, and framing) for users and agents to click and select.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
         },
       },
       {
@@ -318,6 +330,80 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 
+// Define available prompts
+server.setRequestHandler(ListPromptsRequestSchema, async () => {
+  return {
+    prompts: [
+      {
+        name: 'onboarding_wizard',
+        description:
+          'Interactive onboarding interview: asks for video source, target clip count, length sweet spot (40-60s), caption style, and framing.',
+        arguments: [
+          {
+            name: 'video_source',
+            description: 'Optional YouTube URL or local video path',
+            required: false,
+          },
+        ],
+      },
+      {
+        name: 'create_viral_shorts',
+        description:
+          'Guided workflow to convert a horizontal video into viral 9:16 vertical shorts with AI face tracking and kinetic captions.',
+        arguments: [
+          {
+            name: 'video_path_or_url',
+            description: 'YouTube URL or local video path',
+            required: false,
+          },
+        ],
+      },
+    ],
+  };
+});
+
+server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+  const { name, arguments: promptArgs } = request.params;
+  const videoHint = promptArgs?.video_source || promptArgs?.video_path_or_url;
+
+  return {
+    description: 'ShortsMaker Interactive Onboarding Interview',
+    messages: [
+      {
+        role: 'user',
+        content: {
+          type: 'text',
+          text: `Hi! Please run the ShortsMaker Onboarding Interview with me. Ask me the following questions with clear multiple-choice options so I can click or select my choices:
+
+1. **Video Source**: Where is your long video? (Provide YouTube URL or local file path)${videoHint ? `\n   (I have provided: ${videoHint})` : ''}
+2. **Number of Shorts**:
+   - (Recommended) 3 Shorts (Optimal variety & fast rendering)
+   - 1 Short (Quick single test)
+   - 5 Shorts (Daily social cluster)
+   - 10 Shorts (Full weekly batch)
+3. **Clip Duration**:
+   - (Recommended) 40–60 seconds (Sweet spot for maximum TikTok, Reels & Shorts retention)
+   - 30–45 seconds (Fast-paced, rapid hooks)
+   - 15–30 seconds (Micro attention hooks)
+   - 60–90 seconds (In-depth storytelling)
+4. **Caption Style**:
+   - (Recommended) hormozi_badge (Yellow/green bold words with high-contrast pill badges)
+   - hormozi (Electric green active word highlight with clean outline)
+   - mrbeast (High-impact yellow & red text with heavy drop shadow)
+   - neon (Cyberpunk cyan & magenta glowing subtitles)
+   - minimal (Clean white subtitles with subtle outline)
+5. **Framing & Aspect Ratio**:
+   - (Recommended) viral_fullscreen_punch with AI Face Tracking (Full 1080x1920 mobile screen with dynamic speaker tracking)
+   - blurred_background (Original video centered with ambient blurred background)
+   - split_screen (Top and bottom podcast/reaction layout)
+
+Once I answer, please proceed to batch-generate the shorts using the batch_generate_shorts tool!`,
+        },
+      },
+    ],
+  };
+});
+
 // Handle tool executions
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
@@ -414,6 +500,81 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
         return {
           content: [{ type: 'text', text: aggregated }],
+        };
+      }
+
+      case 'get_onboarding_wizard': {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  title: 'ShortsMaker Onboarding Wizard',
+                  instructions:
+                    'Present these questions to the user with clickable options so they can choose their preferences before video rendering begins.',
+                  questions: [
+                    {
+                      id: 'video_source',
+                      question: 'Where is your long video that you want to turn into viral shorts?',
+                      options: [
+                        'YouTube URL (e.g. https://youtu.be/...)',
+                        'Local video file path (e.g. C:/videos/podcast.mp4)',
+                        'Sample test video (built-in demo)',
+                      ],
+                      is_multi_select: false,
+                    },
+                    {
+                      id: 'count',
+                      question: 'How many viral shorts would you like to produce?',
+                      options: [
+                        '(Recommended) 3 Shorts (Optimal variety & fast rendering)',
+                        '1 Short (Quick single test)',
+                        '5 Shorts (Daily social cluster)',
+                        '10 Shorts (Full weekly viral batch)',
+                      ],
+                      is_multi_select: false,
+                    },
+                    {
+                      id: 'clip_duration',
+                      question: 'What length would you like for each short?',
+                      options: [
+                        '(Recommended) 40–60 seconds (Sweet spot for maximum TikTok, Reels & Shorts retention)',
+                        '30–45 seconds (Fast-paced, high tempo)',
+                        '15–30 seconds (Micro attention hooks)',
+                        '60–90 seconds (In-depth storytelling)',
+                      ],
+                      is_multi_select: false,
+                    },
+                    {
+                      id: 'caption_style',
+                      question: 'Which subtitle caption style would you like?',
+                      options: [
+                        '(Recommended) hormozi_badge (Yellow/green bold words with high-contrast pill badges)',
+                        'hormozi (Electric green active word highlight with clean outline)',
+                        'mrbeast (High-impact yellow & red text with heavy drop shadow)',
+                        'neon (Cyberpunk cyan & magenta glowing subtitles)',
+                        'minimal (Clean white subtitles with subtle outline)',
+                      ],
+                      is_multi_select: false,
+                    },
+                    {
+                      id: 'layout',
+                      question: 'How should the horizontal video be reframed for 9:16 mobile vertical?',
+                      options: [
+                        '(Recommended) viral_fullscreen_punch with AI Face Tracking (Full 1080x1920 mobile screen with dynamic speaker tracking)',
+                        'blurred_background (Original video centered with ambient blurred background)',
+                        'split_screen (Top and bottom podcast/reaction layout)',
+                      ],
+                      is_multi_select: false,
+                    },
+                  ],
+                },
+                null,
+                2
+              ),
+            },
+          ],
         };
       }
 

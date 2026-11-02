@@ -11,5 +11,6 @@ Read the following files in order before implementing or making any architectura
 
 ### Key Rules
 - Read `context/architecture.md` before touching `src/videoProcessor.js` or `src/subtitleGenerator.js`.
+- **Onboarding Protocol**: When a user begins a video workflow, ask the onboarding questions (video source, number of shorts, duration sweet spot 40-60s, caption style, and framing) with selectable options.
 - Always verify changes with `node tests/test_mcp.js`.
 - Update `context/progress-tracker.md` after each meaningful implementation step.
